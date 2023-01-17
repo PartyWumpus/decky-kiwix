@@ -21,7 +21,7 @@ import logo from "../assets/logo.png";
 //   right: number;
 // }
 
-const Content: VFC<{ serverAPI: ServerAPI }> = ({}) => {
+const Content: VFC<{ serverAPI: ServerAPI }> = ({serverAPI}) => {
   // const [result, setResult] = useState<number | undefined>();
 
   // const onClick = async () => {
@@ -42,7 +42,7 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({}) => {
       <PanelSectionRow>
         <ButtonItem
           layout="below"
-          onClick={() => {serverAPI!.callPluginMethod("frontend_host_library");}}
+          onClick={() => {serverAPI!.callPluginMethod("frontend_host_library", {});}}
         >
           Start Server
         </ButtonItem>
@@ -51,7 +51,7 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({}) => {
       <PanelSectionRow>
         <ButtonItem
           layout="below"
-          onClick={() => {serverAPI!.callPluginMethod("frontend_download_file", {"metalink": "https://download.kiwix.org/zim/other/archlinux_en_all_nopic_2022-12.zim.meta4"});}}
+          onClick={() => {serverAPI!.callPluginMethod("frontend_download_file", {metalink: "https://download.kiwix.org/zim/other/archlinux_en_all_nopic_2022-12.zim.meta4"});}}
         >
           Download Archwiki
         </ButtonItem>
