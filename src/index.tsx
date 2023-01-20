@@ -2,19 +2,23 @@ import {
   ButtonItem,
   definePlugin,
   DialogButton,
-  Menu,
-  MenuItem,
   PanelSection,
   PanelSectionRow,
   Router,
   ServerAPI,
-  showContextMenu,
   staticClasses,
+  SidebarNavigation,
+  SteamSpinner,
 } from "decky-frontend-lib";
-import { VFC } from "react";
+import { VFC, Suspense, useState, useEffect } from "react";
 import { FaShip } from "react-icons/fa";
 
-import logo from "../assets/logo.png";
+import { About } from "./components/About";
+import { AddKiwix } from "./components/AddKiwix";
+import { ManageKiwix } from "./components/ManageKiwix";
+import * as python from "./python";
+
+
 
 // interface AddMethodArgs {
 //   left: number;
@@ -22,51 +26,66 @@ import logo from "../assets/logo.png";
 // }
 
 const Content: VFC<{ serverAPI: ServerAPI }> = ({serverAPI}) => {
-  // const [result, setResult] = useState<number | undefined>();
+   const [downloads, setDownloads] = useState({});
 
-  // const onClick = async () => {
-  //   const result = await serverAPI.callPluginMethod<AddMethodArgs, number>(
-  //     "add",
-  //     {
-  //       left: 2,
-  //       right: 2,
-  //     }
-  //   );
-  //   if (result.success) {
-  //     setResult(result.result);
-  //   }
-  // };
+
 
   return (
     <PanelSection title="test menu">
       <PanelSectionRow>
         <ButtonItem
           layout="below"
-          onClick={() => {serverAPI!.callPluginMethod("frontend_host_library", {});}}
+          onClick={async() => {
+            python.execute(python.downloadFile('https://download.kiwix.org/zim/other/archlinux_en_all_nopic_2022-12.zim.meta4'));
+            const interval = setInterval(async() => {
+              python.resolve(python.getDownloads('https://download.kiwix.org/zim/other/archlinux_en_all_nopic_2022-12.zim.meta4'), (percent: number) => {setDownloads({...downloads,['https://download.kiwix.org/zim/other/archlinux_en_all_nopic_2022-12.zim.meta4']:percent});if (percent == 100) clearInterval(interval);});
+            }, 200);
+            } }
         >
-          Start Server
+          Download Archwiki {downloads['https://download.kiwix.org/zim/other/archlinux_en_all_nopic_2022-12.zim.meta4'] ?? ""}
         </ButtonItem>
       </PanelSectionRow>
 
       <PanelSectionRow>
         <ButtonItem
           layout="below"
-          onClick={() => {serverAPI!.callPluginMethod("frontend_download_file", {metalink: "https://download.kiwix.org/zim/other/archlinux_en_all_nopic_2022-12.zim.meta4"});}}
+          onClick={async() => {
+            python.execute(python.downloadFile('https://download.kiwix.org/zim/wikipedia/wikipedia_en_100_nopic_2022-12.zim.meta4'));
+            const interval = setInterval(async() => {
+              python.resolve(python.getDownloads('https://download.kiwix.org/zim/wikipedia/wikipedia_en_100_nopic_2022-12.zim.meta4'), (percent: number) => {setDownloads({...downloads,['https://download.kiwix.org/zim/wikipedia/wikipedia_en_100_nopic_2022-12.zim.meta4']:percent});if (percent == 100) clearInterval(interval);});
+            }, 200);
+            } }
         >
-          Download Archwiki
+          Download Wikipedia 100 {downloads['https://download.kiwix.org/zim/wikipedia/wikipedia_en_100_nopic_2022-12.zim.meta4'] ?? ""}
         </ButtonItem>
       </PanelSectionRow>
 
       <PanelSectionRow>
-        <div style={{ display: "flex", justifyContent: "center" }}>
-          <img src={logo} />
-        </div>
+      <ButtonItem>
+        {JSON.stringify(downloads) ?? "nothing yet"}
+      </ButtonItem>
+      </PanelSectionRow>
+
+      <PanelSectionRow>
+        <ButtonItem
+          layout="below"
+          onClick={async() => {serverAPI!.callPluginMethod("arbitrary_log", {});} }
+        >
+          Test Button
+        </ButtonItem>
+      </PanelSectionRow>
+
+      <PanelSectionRow>
+        <ButtonItem layout="below" onClick={() => { Router.CloseSideMenus(); Router.Navigate("/kiwix-nav"); }} >
+          Manage Books
+        </ButtonItem>
       </PanelSectionRow>
 
       <PanelSectionRow>
         <ButtonItem
           layout="below"
           onClick={() => {
+            serverAPI!.callPluginMethod("frontend_host_library", {});
             Router.CloseSideMenus();
             Router.NavigateToExternalWeb("localhost:60918/");
           }}
@@ -78,7 +97,56 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({serverAPI}) => {
   );
 };
 
+const KiwixManagerRouter: VFC = () => {
+  return (
+    <SidebarNavigation
+      title="Kiwix Manager"
+      showTitle
+      pages={[
+        {
+          title: "Download New Books",
+          content: <AddKiwix />,
+          route: "/kiwix-nav/add",
+        },
+        {
+          title: "Manage Books",
+          content: <ManageKiwix />,
+          route: "/kiwix-nav/manage",
+        },
+        {
+          title: "About Decky Kiwix",
+          content: <About />,
+          route: "/kiwix-nav/about",
+        },
+      ]}
+    />
+  );
+};
+
 export default definePlugin((serverApi: ServerAPI) => {
+
+  python.setServer(serverApi);
+
+  serverApi.routerHook.addRoute("/kiwix-nav", KiwixManagerRouter,  () => {
+    return (
+      <Suspense
+        fallback={
+          <div
+            style={{
+              marginTop: "40px",
+              height: "calc( 100% - 40px )",
+              overflowY: "scroll",
+            }}
+          >
+            <SteamSpinner />
+          </div>
+        }
+      >
+        <KiwixManagerRouter />
+      </Suspense>
+    );
+  });
+
   return {
     title: <div className={staticClasses.Title}>Decky Kiwix</div>,
     content: <Content serverAPI={serverApi} />,
