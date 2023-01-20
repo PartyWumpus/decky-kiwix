@@ -19,7 +19,7 @@ logging.basicConfig(filename="/tmp/decky-kiwix.log",
                     filemode='w+',
                     force=True)
 logger=logging.getLogger()
-logger.setLevel(logging.INFO) # can be changed to logging.DEBUG for debugging issues
+logger.setLevel(logging.DEBUG) # can be changed to logging.DEBUG for debugging issues
 
 import pathlib
 HOMEBREW_DIR = str(pathlib.Path(__file__).parents[2])
@@ -33,24 +33,23 @@ import hashlib
 from math import ceil, floor
 import time
 import traceback
-
+import threading
 
 url = "https://library.kiwix.org"
 download_location = f"{HOMEBREW_DIR}/kiwix/"
 plugin_folder = f"{HOMEBREW_DIR}/plugins/decky-kiwix/"
 
+downloads = {}
 
 def find_languages():
     language_names = {}
-    all_languages = set()
 
     r = requests.get(f"{url}/catalog/v2/languages")
     root = ET.fromstring(r.content)
     for child in root.iterfind('{http://www.w3.org/2005/Atom}entry'):
         if child.find("{http://purl.org/dc/terms/}language").text != None and child.find("{http://purl.org/dc/terms/}language").text != "Fra":
-            language_names[child.find("{http://purl.org/dc/terms/}language").text] = child.find('{http://www.w3.org/2005/Atom}title').text
-            all_languages.add(child.find('{http://www.w3.org/2005/Atom}title').text)
-    return list(all_languages), language_names
+            language_names[child.find('{http://www.w3.org/2005/Atom}title').text] = child.find("{http://purl.org/dc/terms/}language").text
+    return language_names
 
 def find_categories():
     all_categories = set()
@@ -105,7 +104,9 @@ def find_zims(language='all', category='all', search=None):
         found_ZIMs.append(data)
     return(found_ZIMs)
 
+
 def download_file(metalink):
+    global downloads
     logger.info(f"starting download of {metalink}")
     r = requests.get(metalink)
     root = ET.fromstring(r.content)
@@ -130,21 +131,25 @@ def download_file(metalink):
 
     local_filename = f"{download_location}{filename}"
     logger.info(f"starting download of {filename} via {url}")
+
     if os.path.exists(local_filename):
         chunkNum = floor(os.stat(local_filename).st_size / chunk_size)
         logger.info(f"file already exists, starting at chunk {chunkNum} of {ceil(full_size/chunk_size)}")
     else:
         chunkNum = 0
 
-    while chunkNum+1 < ceil(full_size/chunk_size):
+    downloads[metalink] = floor((chunkNum/(full_size/chunk_size))*100)
+
+    while chunkNum < ceil(full_size/chunk_size):
         resume_header = {'Range': f'bytes={chunkNum*chunk_size}-'} # download will continue if interrupted
         try:
             with requests.get(url, stream=True, timeout=(10, 50), headers=resume_header) as r:
                 r.raise_for_status()
                 with open(local_filename, 'ab') as f:
                     for chunk in r.iter_content(chunk_size=chunk_size):
+                        downloads[metalink] = floor((chunkNum/(full_size/chunk_size))*100)
                         if hashlib.sha1(chunk).hexdigest() == chunk_hashes[chunkNum]:
-                            logger.info(f"Chunk {chunkNum+1} of {ceil(full_size/chunk_size)} ({ceil((chunk_size*chunkNum)/1024/1024)}MB/{ceil(full_size/1024/1024)}MB)")
+                            logger.debug(f"Chunk {chunkNum+1} of {ceil(full_size/chunk_size)} ({ceil((chunk_size*chunkNum)/1024/1024)}MB/{ceil(full_size/1024/1024)}MB)")
                             f.write(chunk)
                         else:
                             logger.info(f"Chunk {chunkNum} failed hash check, retrying")
@@ -155,35 +160,47 @@ def download_file(metalink):
             logger.info(f"Chunk {chunkNum} timed out, retrying")
             time.sleep(5) # wait a bit before retrying
     # download is now done
-    #os.system(f'''"{plugin_folder}/kiwix-manage" "{download_location}"library.xml add "{download_location}"{filename}''')
-    logger.info("Download complete")
+    os.system(f'''"{plugin_folder}/kiwix-manage" "{download_location}"library.xml add "{download_location}"{filename}''')
+    downloads[metalink] = 100
+    logger.info(f"Download of {metalink} is complete")
 
 def delete_file(filename):
-    os.remove(f'"{download_location}/filename"')
+    os.remove(f'"{download_location}/{filename}"')
+    os.system(f'''"{plugin_folder}/kiwix-manage" "{download_location}"library.xml remove {filename}''')
 
 def host_library():
-    os.system(f'''"{plugin_folder}/kiwix-serve" -p 60918 "{download_location}"*''')
+    os.system(f'''"{plugin_folder}/kiwix-serve" -p 60918 --library "{download_location}"library.xml''')
 
+# TODO: deal with me laterer
 def installed_zims():
     print(os.listdir(download_location))
 
 class Plugin:
-
     # kiwix tools available at https://download.kiwix.org/release/kiwix-tools/kiwix-tools_linux-x86_64.tar.gz
     # https://library.kiwix.org/catalog/v2/root.xml has helpful info :)
 
     # A normal method. It can be called from JavaScript using call_plugin_function("method_1", argument1, argument2)
     async def frontend_host_library(self):
         logger.info("Starting up library at port 60918")
-        host_library()
+        libraryThread.start()
+
+    async def frontend_kill_library(self):
+        logger.info("Killing library at port 60918")
+        libraryThread.terminate()
 
     async def frontend_download_file(self, metalink):
         logger.info(f"Attempting download of {metalink}")
-        download_file(metalink)
+        x = threading.Thread(target=download_file, args=[metalink], daemon=True)
+        x.start()
+
+    async def frontend_download_progress(self, metalink):
+        return downloads[metalink]
 
     # Asyncio-compatible long-running code, executed in a task when the plugin is loaded
     async def _main(self):
+        global libraryThread
         logger.info("Hello World!")
+        libraryThread = threading.Thread(target=host_library, daemon=True)
 
     # Function called first during the unload process, utilize this to handle your plugin being removed
     async def _unload(self):
