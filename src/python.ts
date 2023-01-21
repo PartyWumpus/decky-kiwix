@@ -36,6 +36,28 @@ export function downloadFile(metalink:string): Promise<any> {
   return server!.callPluginMethod("frontend_download_file", {"metalink": metalink});
 }
 
+export function startServe(): Promise<any> {
+  return server!.callPluginMethod("frontend_host_library", {});
+}
+
+export function stopServe(): Promise<any> {
+  return server!.callPluginMethod("frontend_kill_library", {});
+}
+
+
 export function getDownloads(metalink:string): Promise<any> {
   return server!.callPluginMethod("frontend_download_progress", {"metalink":metalink});
 }
+
+export function getZims(language:string = 'all', category:string = 'all', search:string = "_Empty"): Promise<any> {
+  return server!.callPluginMethod("frontend_find_zims", {"language":language, "category":category, "search":search});
+}
+
+export function getCategories(): Promise<any> {
+  return server!.callPluginMethod("frontend_get_categories", {});
+}
+
+export function getLanguages(): Promise<any> {
+  return server!.callPluginMethod("frontend_get_languages", {});
+}
+
