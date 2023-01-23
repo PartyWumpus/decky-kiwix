@@ -49,7 +49,7 @@ export function getDownloads(metalink:string): Promise<any> {
   return server!.callPluginMethod("frontend_download_progress", {"metalink":metalink});
 }
 
-export function getZims(language:string = 'all', category:string = 'all', search:string = "_Empty"): Promise<any> {
+export function getZims(language:string = 'all', category:string = 'all', search:string = ""): Promise<any> {
   return server!.callPluginMethod("frontend_find_zims", {"language":language, "category":category, "search":search});
 }
 

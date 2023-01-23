@@ -2,19 +2,17 @@ import {
   ButtonItem,
   definePlugin,
   DialogButton,
-  Menu,
-  MenuItem,
   PanelSection,
   PanelSectionRow,
   Router,
   ServerAPI,
-  showContextMenu,
+  Dropdown,
   staticClasses,
   SidebarNavigation,
-  SteamSpinner,
+  SteamSpinner
 } from "decky-frontend-lib";
 
-import { VFC, Suspense, useState, useEffect } from "react";
+import { VFC, Suspense, useState, useEffect, Fragment } from "react";
 import { FaShip } from "react-icons/fa";
 
 import { About } from "./components/About";
@@ -22,8 +20,15 @@ import { AddKiwix } from "./components/AddKiwix";
 import { ManageKiwix } from "./components/ManageKiwix";
 import * as python from "./python";
 
+enum UpdateBranch {
+  Stable,
+  Prerelease,
+  Testing,
+}
+
 const Content: VFC<{ serverAPI: ServerAPI }> = ({serverAPI}) => {
   const [installed, setInstalled] = useState({});
+  const [option, setOption] = useState<number>();
 
   return (
     <PanelSection title="test menu">
@@ -34,22 +39,33 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({serverAPI}) => {
       </PanelSectionRow>
 
       <PanelSectionRow>
-      <ButtonItem
-          layout="below"
-          onClick={(e) =>
-            showContextMenu(
-              <Menu label="Menu" cancelText="CAAAANCEL">
-                <MenuItem>Item #1</MenuItem>
-                <MenuItem>Item #2</MenuItem>
-                <MenuItem>Item #3</MenuItem>
-              </Menu>,
-              e.currentTarget ?? window
-            )
-          }
-        >
-          Server says yolo
+        <ButtonItem layout="below" onClick={() => { setOption(2); }} >
+          owo
         </ButtonItem>
-        </PanelSectionRow>
+      </PanelSectionRow>
+
+      <PanelSectionRow>
+      <Dropdown
+        rgOptions={Object.values(UpdateBranch)
+          .filter((branch) => typeof branch == 'string')
+          .map((branch) => ({
+            label: branch,
+            data: UpdateBranch[branch],
+          }))}
+        selectedOption={option}
+        onChange={async(newVal) => {
+          console.log('switching branches!');console.log(newVal.data);console.log(option);
+          await setOption(newVal.data);
+          setTimeout(() => {console.log(option);}, 1500)}}
+      />
+      </PanelSectionRow>
+
+      <PanelSectionRow>
+      <>
+      <span>{option}</span>
+      <span>{UpdateBranch[option]}</span>
+      </>
+      </PanelSectionRow>
 
       <PanelSectionRow>
         <ButtonItem
@@ -123,5 +139,6 @@ export default definePlugin((serverApi: ServerAPI) => {
     title: <div className={staticClasses.Title}>Decky Kiwix</div>,
     content: <Content serverAPI={serverApi} />,
     icon: <FaShip />,
+    alwaysRender: true,
   };
 });

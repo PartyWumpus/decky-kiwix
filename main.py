@@ -2,29 +2,28 @@ import os
 import sys
 
 PYTHON_LIB_DIR = '/usr/lib/python{}.{}'.format(sys.version_info[0], sys.version_info[1])
-sys.path.append(PYTHON_LIB_DIR)
-sys.path.append(PYTHON_LIB_DIR+'/lib-dynload')
-sys.path.append(PYTHON_LIB_DIR+'/site-packages')
-
 #jank xml fix, hopefully not needed forever :)
 sys.path.append(f"{PYTHON_LIB_DIR}/xml/")
-
-# append py_modules to PYTHONPATH
 sys.path.append(os.path.dirname(os.path.realpath(__file__))+"/py_modules")
 
-import logging
 
-logging.basicConfig(filename="/tmp/decky-kiwix.log",
+import pathlib
+HOMEBREW_DIR = str(pathlib.Path(__file__).parents[2])
+#HOMEBREW_DIR = os.environ["DECKY_HOME"]
+DOWNLOAD_DIR = f"{HOMEBREW_DIR}/kiwix"
+PLUGIN_DIR = f"{HOMEBREW_DIR}/plugins/decky-kiwix"
+#PLUGIN_DIR = os.environ["DECKY_PLUGIN_DIR"]
+LOG_DIR = f"{HOMEBREW_DIR}/logs/decky-kiwix"
+#LOG_DIR = os.environ["DECKY_PLUGIN_LOG_DIR"]
+
+import logging
+logging.basicConfig(filename=f"{LOG_DIR}/decky-kiwix.log",
                     format='[Decky-Kiwix] %(asctime)s %(levelname)s %(message)s',
                     filemode='w+',
                     force=True)
 logger=logging.getLogger()
-logger.setLevel(logging.DEBUG) # can be changed to logging.DEBUG for debugging issues
+logger.setLevel(logging.INFO) # can be changed to logging.DEBUG for debugging issues
 
-import pathlib
-HOMEBREW_DIR = str(pathlib.Path(__file__).parents[2])
-
-# TODO: find all installed ZIMs
 import requests, json
 #from xml.etree import ElementTree as ET
 from etree import ElementTree as ET
@@ -32,14 +31,19 @@ import re
 import hashlib
 from math import ceil, floor
 import time
-import traceback
 import threading
+import subprocess
 
 url = "https://library.kiwix.org"
-download_location = f"{HOMEBREW_DIR}/kiwix/"
-plugin_folder = f"{HOMEBREW_DIR}/plugins/decky-kiwix/"
-
 downloads = {}
+
+def readable_bytesize(num, suffix="B"):
+    for unit in ["", "Ki", "Mi", "Gi", "Ti", "Pi", "Ei", "Zi"]:
+        if abs(num) < 1024.0:
+            return f"{num:3.1f}{unit}{suffix}"
+        num /= 1024.0
+    return f"{num:.1f}Yi{suffix}"
+
 
 def find_languages():
     language_names = {}
@@ -59,8 +63,8 @@ def find_categories():
         all_categories.add(child.find('{http://www.w3.org/2005/Atom}title').text)
     return list(all_categories)
 
-def find_zims(language='all', category='all', search=None):
-    perams = {'count':-1,"notag":"_sw:yes"}
+def find_zims(language='all', category='all', search=""):
+    perams = {'count':20,"notag":"_sw:yes"}
 
     if language != "all":
         perams['lang'] = language
@@ -68,7 +72,7 @@ def find_zims(language='all', category='all', search=None):
     if category != "all":
         perams['tag'] = f"_category:{category}"
 
-    if search != None:
+    if search != "":
         perams['q'] = search
 
 
@@ -93,7 +97,7 @@ def find_zims(language='all', category='all', search=None):
         for link in child.iterfind('{http://www.w3.org/2005/Atom}link'):
             if link.get('type') == "application/x-zim":
                 data['metalink'] = link.get('href')
-                data['size'] = int(link.get('length'))
+                data['size'] = readable_bytesize(int(link.get('length')))
             if link.get('rel') == "http://opds-spec.org/image/thumbnail":
                 data['image'] = link.get('href')
 
@@ -129,7 +133,7 @@ def download_file(metalink):
     # TODO: find the best url better, currently just grabs the top link
     url = info.find('{urn:ietf:params:xml:ns:metalink}url').text
 
-    local_filename = f"{download_location}{filename}"
+    local_filename = f"{DOWNLOAD_DIR}/{filename}"
     logger.info(f"starting download of {filename} via {url}")
 
     if os.path.exists(local_filename):
@@ -160,16 +164,25 @@ def download_file(metalink):
             logger.info(f"Chunk {chunkNum} timed out, retrying")
             time.sleep(5) # wait a bit before retrying
     # download is now done
-    os.system(f'''"{plugin_folder}/kiwix-manage" "{download_location}"library.xml add "{download_location}"{filename}''')
+    os.system(f'''"{PLUGIN_DIR}"/kiwix-manage "{DOWNLOAD_DIR}"/library.xml add "{DOWNLOAD_DIR}"/"{filename}"''')
     downloads[metalink] = 100
     logger.info(f"Download of {metalink} is complete")
 
 def delete_file(filename):
-    os.remove(f'"{download_location}/{filename}"')
-    os.system(f'''"{plugin_folder}/kiwix-manage" "{download_location}"library.xml remove {filename}''')
+    os.remove(f'"{DOWNLOAD_DIR}/{filename}"')
+    os.system(f'''"{PLUGIN_DIR}"/kiwix-manage "{DOWNLOAD_DIR}"/library.xml remove "{filename}"''')
 
 def host_library():
-    os.system(f'''"{plugin_folder}/kiwix-serve" -p 60918 --library "{download_location}"library.xml''')
+    global librarySubprocess
+    kill_library()
+    logger.info("Starting up library at port 60918")
+    librarySubprocess = subprocess.Popen([f"{PLUGIN_DIR}/kiwix-serve", "-p", "60918", "--library", f"{DOWNLOAD_DIR}/library.xml"], stdout=subprocess.PIPE, shell=False)
+
+def kill_library():
+    logger.info("Killing library at port 60918")
+    global librarySubprocess
+    if type(librarySubprocess) == subprocess.Popen:
+        librarySubprocess.kill()
 
 # TODO: deal with me laterer
 def installed_zims():
@@ -181,12 +194,11 @@ class Plugin:
 
     # A normal method. It can be called from JavaScript using call_plugin_function("method_1", argument1, argument2)
     async def frontend_host_library(self):
-        logger.info("Starting up library at port 60918")
-        libraryThread.start()
+        host_library()
 
     async def frontend_kill_library(self):
         logger.info("Killing library at port 60918")
-        libraryThread.terminate()
+        kill_library()
 
     async def frontend_download_file(self, metalink):
         logger.info(f"Attempting download of {metalink}")
@@ -196,16 +208,36 @@ class Plugin:
     async def frontend_download_progress(self, metalink):
         return downloads[metalink]
 
+    async def frontend_find_zims(self, language, category, search):
+        global language_names
+        logger.info(f"getting zims {language}, {category}, {search}")
+        languageCode = language_names[language]
+        logger.info(languageCode)
+        return find_zims(languageCode, category, search)
+
+    async def frontend_get_categories(self):
+        categories = sorted(list(find_categories()), key=str.lower)
+        categories.append("all")
+        return categories
+
+    async def frontend_get_languages(self):
+        global language_names
+        language_names = find_languages()
+        languages = sorted(list(language_names.keys()), key=str.lower) # sort alphabetically ignoring case
+        languages.append("all")
+        return languages # returns a list of names (eg English), as the frontend does not need to know the codes (eg ENG)
+
     # Asyncio-compatible long-running code, executed in a task when the plugin is loaded
     async def _main(self):
-        global libraryThread
+        global librarySubprocess, language_names
+        librarySubprocess = None
+        language_names = None
         logger.info("Hello World!")
-        libraryThread = threading.Thread(target=host_library, daemon=True)
 
     # Function called first during the unload process, utilize this to handle your plugin being removed
     async def _unload(self):
         logger.info("Goodbye World!")
-        pass
+        kill_library()
 
 
 #find_categories()

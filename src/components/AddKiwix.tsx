@@ -1,19 +1,21 @@
 import { Fragment, useState, useEffect } from "react";
-import { Focusable, ButtonItem, showContextMenu, Menu, MenuItem } from "decky-frontend-lib";
+import { Focusable, ButtonItem, Dropdown, TextField } from "decky-frontend-lib";
 import * as python from "../python";
 
 export function AddKiwix() {
     const [downloads, setDownloads] = useState({});
     const [zims, setZims] = useState([]); // format = {title, language, category, description, image, metalink, size, images, videos}
-    const [searchPerams, setSearchPerams] = useState({language:'all', category:'all', search:"_Empty"});
     const [categories, setCategories] = useState([]);
     const [languages, setLanguages] = useState([]);
 
-    useEffect(() => {
-    // Update the document title using the browser API
-    python.resolve(python.getCategories(), (data: string[]) => {setCategories(data)});
-    python.resolve(python.getLanguages(), (data: string[]) => {setLanguages(data)});
-    });
+    const [language, setLanguage] = useState<string>('all');
+    const [category, setCategory] = useState<string>('all');
+    const [search, setSearch] = useState<string>(' ');
+
+    //useEffect(() => {
+    //python.resolve(python.getCategories(), (data: string[]) => {setCategories(data)});
+    //python.resolve(python.getLanguages(), (data: string[]) => {setLanguages(data)});
+    //});
 
 
     return (
@@ -27,30 +29,48 @@ export function AddKiwix() {
           columnGap: "5px",
         }}
         >
+        <span>{JSON.stringify(downloads)}</span>
         <ButtonItem
           layout="below"
           onClick={async() => {
-              python.resolve(python.getZims(searchPerams.language, searchPerams.category, searchPerams.search), (zims: object[]) => {setZims(zims)});
+                python.resolve(python.getCategories(), (data: string[]) => {setCategories(data)});
+                python.resolve(python.getLanguages(), (data: string[]) => {setLanguages(data)});
             } }
         >
-          Refresh {searchPerams.language} {searchPerams.category} {searchPerams.search}
+          Refresh
         </ButtonItem>
-        <br />
+        <br/>
+        <div style={{ width: '100%' }}>
+        <TextField label="Search" value={search} onChange={(e) => setSearch(e.target.value)} />
+
         <ButtonItem
           layout="below"
-          onClick={(e) =>
-            showContextMenu(
-              <Menu label="Menu" cancelText="CAAAANCEL" onCancel={() => {}}>
-                <MenuItem onSelected={() => {}}>Item #1</MenuItem>
-                <MenuItem onSelected={() => {}}>Item #2</MenuItem>
-                <MenuItem onSelected={() => {}}>Item #3</MenuItem>
-              </Menu>,
-              e.currentTarget ?? window
-            )
-          }
+          onClick={async() => {
+              python.resolve(python.getZims(language, category, search), (zims: object[]) => {setZims(zims)});
+            } }
         >
-          Server says yolo
+          Search
         </ButtonItem>
+        </div>
+
+        <Dropdown
+        rgOptions={languages.map((lang) => ({
+            label: lang,
+            data: lang,
+          }))}
+        selectedOption={language}
+        menuLabel="Language"
+        onChange={async(newVal) => {await setLanguage(newVal.data);}}
+      />
+        <Dropdown
+        rgOptions={categories.map((lang) => ({
+            label: lang,
+            data: lang,
+          }))}
+        selectedOption={category}
+        menuLabel="Category"
+        onChange={async(newVal) => {await setCategory(newVal.data);}}
+      />
         <br />
          {zims ? zims.map((e) => (
         <Focusable
